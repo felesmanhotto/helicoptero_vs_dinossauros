@@ -1,2 +1,2 @@
 # helicoptero_vs_dinossauros
- Jogo implementado em C
+ Jogo implementado em C no windows
