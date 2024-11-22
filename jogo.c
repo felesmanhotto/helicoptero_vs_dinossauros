@@ -17,8 +17,9 @@ int helicoptero_y = HELICOPTER_START_Y;
 int jogo_ativo = 1; // Controla o loop principal do jogo
 int num_dinos = 0; // Conta o número de dinossauros ativos
 
-// Mutex para controlar acesso ao console
+// Mutex
 pthread_mutex_t console_mutex;
+pthread_mutex_t dinos_mutex;
 
 // Função para redimensionar o console
 void setConsoleSize(int width, int height) {
@@ -128,7 +129,13 @@ void* dispara_missil(void* arg) {
 
 // Função executada pelas threads de dinossauros
 void* movimenta_dino(void* arg) {
+    int thread_id = *(int*)arg; // Identificador único para cada thread
+    free(arg); // Libera a memória alocada para o identificador da thread
+
     int dino_x = 78;                  // Dinossauro começa no lado direito
+
+    // Inicializa uma semente única para cada thread
+    srand(time(NULL) + thread_id);
     int dino_y = (rand() % 15) + 4;   // Posição vertical aleatória
 
     while (dino_x > 1 && jogo_ativo) { // Enquanto o dinossauro não sair do cenário
@@ -137,7 +144,7 @@ void* movimenta_dino(void* arg) {
         printf("%c", DINO_CHAR);
         pthread_mutex_unlock(&console_mutex);
 
-        Sleep(200); // Movimento lento do dinossauro (talvez usar uma variavel dps)
+        Sleep(200); // Movimento lento do dinossauro
 
         pthread_mutex_lock(&console_mutex); 
         gotoxy(dino_x, dino_y);
@@ -147,9 +154,9 @@ void* movimenta_dino(void* arg) {
         dino_x--;
     }
 
-    pthread_mutex_lock(&console_mutex);
+    pthread_mutex_lock(&dinos_mutex);
     num_dinos--; // Reduz o número de dinossauros ativos
-    pthread_mutex_unlock(&console_mutex); 
+    pthread_mutex_unlock(&dinos_mutex); 
 
     return NULL;
 }
@@ -157,8 +164,9 @@ void* movimenta_dino(void* arg) {
 // Função principal
 int main() {
 
-    // Inicializa o mutex
+    // Inicializa os mutex
     pthread_mutex_init(&console_mutex, NULL);
+    pthread_mutex_init(&dinos_mutex, NULL);
 
     // Redimensiona o console para 80 colunas e 25 linhas
     setConsoleSize(80, 25);
@@ -168,19 +176,29 @@ int main() {
     pthread_t thread_helicoptero;
     pthread_create(&thread_helicoptero, NULL, movimenta_helicoptero, NULL); // Entender melhor os parametros aqui
 
-    srand(time(NULL)); // Inicializa o gerador de números aleatórios
+    // Variável para gerar identificadores únicos para as threads
+    int thread_counter = 0;
 
     // Loop principal do jogo
     while (jogo_ativo) {
-
+        pthread_mutex_lock(&dinos_mutex);
         if (num_dinos < MAX_DINOS) {
+            pthread_mutex_unlock(&dinos_mutex);
+
             pthread_t thread_dino;
-            pthread_create(&thread_dino, NULL, movimenta_dino, NULL);
+
+            // Aloca memória para o identificador único da thread
+            int* thread_id = malloc(sizeof(int));
+            *thread_id = rand(); // Gera um identificador aleatório único
+
+            pthread_create(&thread_dino, NULL, movimenta_dino, &thread_counter);
             pthread_detach(thread_dino); // Deixa o dinossauro rodar de forma independente *****
 
-            pthread_mutex_lock(&console_mutex); // Proteger variavel global (alterada na funcao movimenta_dino tbm)
+            pthread_mutex_lock(&dinos_mutex); // Proteger variavel global (alterada na funcao movimenta_dino tbm)
             num_dinos++;
-            pthread_mutex_unlock(&console_mutex);
+            pthread_mutex_unlock(&dinos_mutex);
+        } else {
+            pthread_mutex_unlock(&dinos_mutex); // Libera se a condição não for satisfeita
         }
 
         if (GetAsyncKeyState(VK_SPACE) & 0x8000) { // Tecla "Espaço" *****
@@ -189,7 +207,7 @@ int main() {
             pthread_detach(thread_missil); // Deixa o míssil rodar de forma independente *****
             Sleep(200); // Evita múltiplos disparos com um único pressionamento
         }
-        Sleep(50); // Suaviza o loop principal
+        Sleep(500); 
     }
 
     // Espera a thread do helicóptero finalizar ****
@@ -197,6 +215,7 @@ int main() {
 
     // Destroi o mutex
     pthread_mutex_destroy(&console_mutex);
+    pthread_mutex_destroy(&dinos_mutex);
 
     return 0;
 }
