@@ -1,18 +1,21 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>  
 #include <windows.h> // Para manipular o console no Windows
 
-// Definições para o helicóptero e mísseis
 #define HELICOPTER_CHAR 'H'
 #define MISSILE_CHAR '-'
+#define DINO_CHAR 'D'
 #define HELICOPTER_START_X 10
 #define HELICOPTER_START_Y 10
+#define MAX_DINOS 5
 
 // Variáveis globais
 int helicoptero_x = HELICOPTER_START_X;
 int helicoptero_y = HELICOPTER_START_Y;
 int jogo_ativo = 1; // Controla o loop principal do jogo
+int num_dinos = 0; // Conta o número de dinossauros ativos
 
 // Mutex para controlar acesso ao console
 pthread_mutex_t console_mutex;
@@ -123,6 +126,34 @@ void* dispara_missil(void* arg) {
     return NULL;
 }
 
+// Função executada pelas threads de dinossauros
+void* movimenta_dino(void* arg) {
+    int dino_x = 78;                  // Dinossauro começa no lado direito
+    int dino_y = (rand() % 15) + 4;   // Posição vertical aleatória
+
+    while (dino_x > 1 && jogo_ativo) { // Enquanto o dinossauro não sair do cenário
+        pthread_mutex_lock(&console_mutex);
+        gotoxy(dino_x, dino_y);
+        printf("%c", DINO_CHAR);
+        pthread_mutex_unlock(&console_mutex);
+
+        Sleep(200); // Movimento lento do dinossauro (talvez usar uma variavel dps)
+
+        pthread_mutex_lock(&console_mutex); 
+        gotoxy(dino_x, dino_y);
+        printf(" "); // Apaga o dinossauro da posição anterior
+        pthread_mutex_unlock(&console_mutex); 
+
+        dino_x--;
+    }
+
+    pthread_mutex_lock(&console_mutex);
+    num_dinos--; // Reduz o número de dinossauros ativos
+    pthread_mutex_unlock(&console_mutex); 
+
+    return NULL;
+}
+
 // Função principal
 int main() {
 
@@ -132,15 +163,26 @@ int main() {
     // Redimensiona o console para 80 colunas e 25 linhas
     setConsoleSize(80, 25);
 
-    // Desenha o cenário inicial
     desenha_cenario();
 
-    // Cria a thread do helicóptero
     pthread_t thread_helicoptero;
-    pthread_create(&thread_helicoptero, NULL, movimenta_helicoptero, NULL);
+    pthread_create(&thread_helicoptero, NULL, movimenta_helicoptero, NULL); // Entender melhor os parametros aqui
+
+    srand(time(NULL)); // Inicializa o gerador de números aleatórios
 
     // Loop principal do jogo
     while (jogo_ativo) {
+
+        if (num_dinos < MAX_DINOS) {
+            pthread_t thread_dino;
+            pthread_create(&thread_dino, NULL, movimenta_dino, NULL);
+            pthread_detach(thread_dino); // Deixa o dinossauro rodar de forma independente *****
+
+            pthread_mutex_lock(&console_mutex); // Proteger variavel global (alterada na funcao movimenta_dino tbm)
+            num_dinos++;
+            pthread_mutex_unlock(&console_mutex);
+        }
+
         if (GetAsyncKeyState(VK_SPACE) & 0x8000) { // Tecla "Espaço" *****
             pthread_t thread_missil;
             pthread_create(&thread_missil, NULL, dispara_missil, NULL);
