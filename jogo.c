@@ -291,7 +291,7 @@ void* abastece_deposito(void* arg) {
                 
                 Sleep(2000);
                 pthread_mutex_lock(&deposito_mutex);
-                i = -1; // preenche os slots do inicio caso algum tenha sido utilizado
+                i = -1; // para preencher os slots do inicio caso algum tenha sido utilizado
             }
         }
 
@@ -303,7 +303,7 @@ void* abastece_deposito(void* arg) {
 }
 
 void* movimenta_dino(void* arg) {
-    int dino_id = *(int*)arg; // Recebe o índice do dinossauro ***
+    int dino_id = *(int*)arg; // recebe o id respectivo da lista dinos
     free(arg);
 
     while (dinos[dino_id].x > 1 && jogo_ativo && dinos[dino_id].ativo) {
@@ -314,7 +314,7 @@ void* movimenta_dino(void* arg) {
         printf("O");
         pthread_mutex_unlock(&console_mutex);
 
-        Sleep(500);
+        Sleep(500); // define a velocidade de movimento
 
         pthread_mutex_lock(&console_mutex);
         gotoxy(dinos[dino_id].x, dinos[dino_id].y);
@@ -325,6 +325,7 @@ void* movimenta_dino(void* arg) {
 
         dinos[dino_id].x--;
 
+        // colisao com o helicoptero
         if (dinos[dino_id].x == helicoptero_x && dinos[dino_id].y == helicoptero_y) {
             jogo_ativo = 0;
 
@@ -364,7 +365,6 @@ void* gerencia_dinos(void* arg) {
 
             pthread_t thread_dino;
 
-            // Encontra um slot livre na estrutura de dinossauros
             int slot = -1;
             for (int i = 0; i < MAX_DINOS; i++) {
                 if (dinos[i].ativo == 0) {
@@ -373,25 +373,23 @@ void* gerencia_dinos(void* arg) {
                 }
             }
 
-            if (slot != -1) {
-                dinos[slot].ativo = 1; // Marca o dinossauro como ativo
+            if (slot != -1) { // verifica se o loop for encontrou dinossauro inativo
+                dinos[slot].ativo = 1;
                 dinos[slot].x = 78;
                 do {
-                    dinos[slot].y = (rand() % 15) + 4; // Gera posição inicial
+                    dinos[slot].y = (rand() % 15) + 4;
                 } while (dinos[slot].y >= DEPOSITO_Y);
                 dinos[slot].vida = m;
 
-
-                // Passa o índice do dinossauro para a thread
-                int* dino_id = malloc(sizeof(int));
+                int* dino_id = malloc(sizeof(int)); // aloca memoria para passar na criação da thread
                 if (!dino_id) {
                     fprintf(stderr, "Erro ao alocar memória para dino_id\n");
                     exit(EXIT_FAILURE);
                 }
                 *dino_id = slot;
 
-                pthread_create(&thread_dino, NULL, movimenta_dino, dino_id);    // ***
-                pthread_detach(thread_dino);
+                pthread_create(&thread_dino, NULL, movimenta_dino, dino_id);
+                pthread_detach(thread_dino);    // final da thread pode liberar recursos sem usar join
 
                 pthread_mutex_lock(&dinos_mutex);
                 num_dinos++;
@@ -403,12 +401,11 @@ void* gerencia_dinos(void* arg) {
             pthread_mutex_unlock(&dinos_mutex);
         }
 
-        Sleep(t); // Controle do intervalo de criação
+        Sleep(t);
     }
     return NULL;
 }
 
-// Função principal
 int main() {
 
     desenha_menu();
@@ -422,13 +419,12 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Inicializa o depósito
     for (int i = 0; i < n; i++) {
-        deposito.slots[i] = 0; // Todos os slots começam vazios
+        deposito.slots[i] = 0;
     }
     deposito.misseis_disponiveis = 0;
 
-    // Inicializa os mutex
+    // inicializar os mutex
     pthread_mutex_init(&console_mutex, NULL);
     pthread_mutex_init(&dinos_mutex, NULL);
     pthread_mutex_init(&deposito_mutex, NULL);
@@ -436,14 +432,14 @@ int main() {
     pthread_mutex_init(&misseis_mutex, NULL);
 
 
-    // Redimensiona o console para 80 colunas e 25 linhas
-    setConsoleSize(80, 25);
+    // tamanho do jogo: 80 colunas e 25 linhas
+    setConsoleSize(90, 28);
 
     desenha_cenario();
     atualizar_contador(); 
 
     pthread_t thread_helicoptero;
-    pthread_create(&thread_helicoptero, NULL, movimenta_helicoptero, NULL); // Entender melhor os parametros aqui
+    pthread_create(&thread_helicoptero, NULL, movimenta_helicoptero, NULL);
 
     pthread_t thread_gerencia_dinos;
     pthread_create(&thread_gerencia_dinos, NULL, gerencia_dinos, NULL);
@@ -452,7 +448,7 @@ int main() {
     pthread_create(&thread_caminhao, NULL, abastece_deposito, NULL);
 
 
-    // Loop principal para entradas do jogador
+    // loop para entradas do jogador
     while (jogo_ativo) {
         if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
             pthread_mutex_lock(&misseis_mutex);
@@ -468,16 +464,15 @@ int main() {
                 pthread_mutex_unlock(&misseis_mutex);
                 recarregar_helicoptero();
             }
-            Sleep(500);
+            Sleep(500); // delay entre entradas melhora a jogabilidade
         }
-        Sleep(50); // Suaviza o loop principal
+        Sleep(50);
     }
-    // Espera a thread do helicóptero finalizar ****
+
     pthread_join(thread_helicoptero, NULL);
     pthread_join(thread_gerencia_dinos, NULL);
     pthread_join(thread_caminhao, NULL);
 
-    // Destroi o mutex
     pthread_mutex_destroy(&console_mutex);
     pthread_mutex_destroy(&dinos_mutex);
     pthread_mutex_destroy(&deposito_mutex);
