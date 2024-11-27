@@ -1,8 +1,8 @@
 #include <stdio.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <time.h>  
-#include <windows.h> // Para manipular o console no Windows
+#include <pthread.h>
+#include <windows.h>
 
 #define HELICOPTER_CHAR 'H'
 #define MISSILE_CHAR '-'
@@ -10,55 +10,53 @@
 #define HELICOPTER_START_X 10
 #define HELICOPTER_START_Y 10
 #define MAX_DINOS 5
-#define MAX_SLOTS 5 // Número de slots no depósito
+#define MAX_SLOTS 5
 #define DEPOSITO_X 10
 #define DEPOSITO_Y 18
 
 typedef struct {
-    int x, y; // Coordenadas do dinossauro
-    int ativo; // 1 se o dinossauro está ativo, 0 caso contrário
-    int vida;  // Vida restante (número de acertos na cabeça necessários)
+    int x, y; 
+    int ativo; // 1 = ativo, 0 = inativo
+    int vida;
 } Dinossauro;
 
 typedef struct {
-    int* slots; // Cada slot representa 1 míssil (1 = cheio, 0 = vazio)
-    int misseis_disponiveis; // Contador de mísseis no depósito
+    int* slots; // 1 = cheio, 0 = vazio)
+    int misseis_disponiveis;
 } Deposito;
 
-Dinossauro dinos[MAX_DINOS]; // Armazena os dinossauros
+Dinossauro dinos[MAX_DINOS]; // array dos dinos
 
-Deposito deposito; // Depósito global
+Deposito deposito;
 
 // Variaveis de dificuldade
-int t = 5000; // Tempo inicial em milissegundos
-int m = 2; // Vida inicial padrão dos dinossauros 
-int n = 5; // Capacidade máxima do depósito
+int t = 5000; // tempo de spawn
+int m = 2; // vida
+int n = 5; // depósito
 
 
 // Variáveis globais
 int helicoptero_x = HELICOPTER_START_X;
 int helicoptero_y = HELICOPTER_START_Y;
-int jogo_ativo = 1; // Controla o loop principal do jogo
-int num_dinos = 0; // Conta o número de dinossauros ativos
-int misseis_hel = 0; // Helicóptero começa com 5 mísseis
+int jogo_ativo = 1; 
+int num_dinos = 0;
+int misseis_hel = 0; 
 
 // Mutex
 pthread_mutex_t console_mutex;
 pthread_mutex_t dinos_mutex;
-pthread_mutex_t deposito_mutex; // Sincronizar acesso ao depósito
+pthread_mutex_t deposito_mutex;
 pthread_mutex_t misseis_mutex;
 
-pthread_cond_t deposito_cond;   // Variável de condição para o depósito
+pthread_cond_t deposito_cond;   // variavel de condição
 
-// Função para redimensionar o console
+
 void setConsoleSize(int width, int height) {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    // Ajusta o buffer de tela
     COORD bufferSize = {width, height};
     SetConsoleScreenBufferSize(hConsole, bufferSize);
 
-    // Ajusta o tamanho da janela
     SMALL_RECT windowSize = {0, 0, width - 1, height - 1};
     SetConsoleWindowInfo(hConsole, TRUE, &windowSize);
 }
@@ -66,22 +64,22 @@ void setConsoleSize(int width, int height) {
 void desenha_menu() {
     system("cls");
     printf("=== SELECIONE A DIFICULDADE ===\n");
-    printf("1. Facil: T = 8s, M = 1, N = 5\n");
+    printf("1. Facil: T = 7s, M = 1, N = 5\n");
     printf("2. Medio: T = 6s, M = 2, N = 4\n");
-    printf("3. Dificil: T = 4s, M = 3, N = 3\n");
+    printf("3. Dificil: T = 5s, M = 3, N = 3\n");
     printf("Escolha uma opcao: ");
 }
 
 void inicializar_dificuldade(int escolha) {
     switch (escolha) {
-        case 1: t = 8000; m = 1; n = 5; break;
+        case 1: t = 7000; m = 1; n = 5; break;
         case 2: t = 6000; m = 2; n = 4; break;
-        case 3: t = 4000; m = 3; n = 3; break;
-        default: t = 8000; m = 1; n = 5; break;
+        case 3: t = 5000; m = 3; n = 3; break;
+        default: t = 7000; m = 1; n = 5; break;
     }
 }
 
-// Função para posicionar o cursor no console
+// posicionar o cursor no console
 void gotoxy(int x, int y) {
     COORD coord;
     coord.X = x;
@@ -91,16 +89,15 @@ void gotoxy(int x, int y) {
 
 void atualizar_contador() {
 
-    pthread_mutex_lock(&console_mutex); // Protege acesso ao console
-    gotoxy(1, 22); // Linha fixa para o contador
-    printf("                                      "); // Limpa a linha
-    gotoxy(1, 22); // Reposiciona para escrever o contador
+    pthread_mutex_lock(&console_mutex); 
+    gotoxy(1, 22); 
+    printf("                                      "); 
+    gotoxy(1, 22); 
 
-    pthread_mutex_lock(&misseis_mutex); // Protege acesso a `misseis_hel`
-    printf("Misseis restantes: %d     ", misseis_hel); // Espaços extras para apagar texto antigo
+    pthread_mutex_lock(&misseis_mutex); 
+    printf("Misseis restantes: %d     ", misseis_hel); 
     pthread_mutex_unlock(&misseis_mutex);
-
-    pthread_mutex_unlock(&console_mutex);
+    pthread_mutex_unlock(&console_mutex);   // mantem em lock ate finalizar os prints
 }
 
 void atualizar_contador_deposito() {
@@ -109,32 +106,28 @@ void atualizar_contador_deposito() {
     printf("[");
 
     pthread_mutex_lock(&deposito_mutex);
-    // Exibe graficamente os slots do depósito
     for (int i = 0; i < n; i++) {
         if (deposito.slots[i] == 1) {
-            printf("#"); // Slot cheio
+            printf("#"); // cheio
         } else {
-            printf("."); // Slot vazio
+            printf("."); // vazio
         }
     }
 
-    printf("]"); // Exibe o número de mísseis disponíveis
+    printf("]");
     pthread_mutex_unlock(&deposito_mutex);
-    pthread_mutex_unlock(&console_mutex);
+    pthread_mutex_unlock(&console_mutex);   // mantem em lock ate finalizar os prints
 }
 
-// Função para desenhar o cenário inicial
 void desenha_cenario() {
-    system("cls"); // Limpa a tela
+    system("cls");
     printf("=== HELICÓPTERO VS DINOSSAUROS ===\n");
     printf("Use as setas do teclado para mover o helicoptero.\n");
     printf("Pressione ESPACO para disparar.\n");
 
-    // Linha superior do cenário
     gotoxy(0, 3);
     for (int i = 0; i < 80; i++) printf("=");
 
-    // Bordas verticais
     for (int i = 4; i < 20; i++) {
         gotoxy(0, i);
         printf("|");
@@ -142,11 +135,9 @@ void desenha_cenario() {
         printf("|");
     }
 
-    // Linha inferior do cenário
     gotoxy(0, 20);
     for (int i = 0; i < 80; i++) printf("=");
 
-    // Desenhar o depósito
     gotoxy(5, 18);
     printf("[DEP]");
 }
@@ -156,13 +147,18 @@ void verificar_game_over() {
     if (num_dinos >= MAX_DINOS) {
         jogo_ativo = 0;
         pthread_mutex_unlock(&dinos_mutex);
-        printf("\nGame Over! O numero maximo de dinossauros foi atingido.\n");
+
+        pthread_mutex_lock(&console_mutex);
+        system("cls");
+        gotoxy(10, 10);
+        printf("Game Over! O numero maximo de dinossauros foi atingido.\n");
+        pthread_mutex_unlock(&console_mutex);
+
         return;
     }
     pthread_mutex_unlock(&dinos_mutex);
 }
 
-// Função para desenhar o helicóptero
 void desenha_helicoptero(int x, int y) {
     pthread_mutex_lock(&console_mutex);
     gotoxy(x, y);
@@ -170,7 +166,6 @@ void desenha_helicoptero(int x, int y) {
     pthread_mutex_unlock(&console_mutex);
 }
 
-// Função para apagar o helicóptero
 void apaga_helicoptero(int x, int y) {
     pthread_mutex_lock(&console_mutex);
     gotoxy(x, y);
@@ -178,147 +173,135 @@ void apaga_helicoptero(int x, int y) {
     pthread_mutex_unlock(&console_mutex);
 }
 
-// Função executada pela thread do helicóptero
-void* movimenta_helicoptero(void* arg) {
+void* movimenta_helicoptero(void* arg) {    // * para referenciar ponteiro na criaçao da thread
     while (jogo_ativo) {
-        if (GetAsyncKeyState(VK_UP) & 0x8000) { // Tecla "Seta para Cima" ****
-            if (helicoptero_y > 4) { // Limite superior
+        if (GetAsyncKeyState(VK_UP) & 0x8000) {  // retorna o estado em 16bits. 0x8000 verifica o mais significativo
+            if (helicoptero_y > 4) { // limite superior
                 apaga_helicoptero(helicoptero_x, helicoptero_y);
                 helicoptero_y--;
             }
         }
-        if (GetAsyncKeyState(VK_DOWN) & 0x8000) { // Tecla "Seta para Baixo"
-            if (helicoptero_y < 19) { // Limite inferior
+        if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
+            if (helicoptero_y < 19) { // limite inferior
                 apaga_helicoptero(helicoptero_x, helicoptero_y);
                 helicoptero_y++;
             }
         }
         desenha_helicoptero(helicoptero_x, helicoptero_y);
-        Sleep(50); // Suaviza o movimento
+        Sleep(50); // melhora o movimento
     }
     return NULL;
 }
 
 void recarregar_helicoptero() {
-    // Verifica se o helicóptero está no depósito
     if (helicoptero_y < DEPOSITO_Y) {
         return;
     }
     pthread_mutex_lock(&deposito_mutex);
     
-    // Verifica se o depósito está vazio ou em uso
     if (deposito.misseis_disponiveis == 0) {
         pthread_mutex_unlock(&deposito_mutex);
-        return; // Retorna sem esperar
+        return;
     }
 
     for (int i = 0; i < n; i++) {
         if (deposito.slots[i] == 1) {
-            deposito.slots[i] = 0; // Remove do slot
+            deposito.slots[i] = 0;
             deposito.misseis_disponiveis--;
 
             pthread_mutex_lock(&misseis_mutex);
             misseis_hel++;
             pthread_mutex_unlock(&misseis_mutex);
 
-            pthread_cond_signal(&deposito_cond); // Notifica o caminhão
+            pthread_cond_signal(&deposito_cond); // notificar a thread caminhão
             atualizar_contador();
-            break; // Recarrega apenas um míssil por vez
+            break;
         }
     }
 
-    pthread_cond_broadcast(&deposito_cond);
     pthread_mutex_unlock(&deposito_mutex);
     atualizar_contador_deposito();
 }
 
-// Função executada pelas threads de mísseis
 void* dispara_missil(void* arg) {
-    int missil_x = helicoptero_x + 1; // Começa à direita do helicóptero
-    int missil_y = helicoptero_y;    // Mesma altura do helicóptero
+    int missil_x = helicoptero_x + 1; 
+    int missil_y = helicoptero_y;    
 
-    while (missil_x < 79 && jogo_ativo) { // Enquanto o míssil está no cenário
+    while (missil_x < 79 && jogo_ativo) { 
         pthread_mutex_lock(&console_mutex);
         gotoxy(missil_x, missil_y);
-        printf("%c", MISSILE_CHAR); // Desenha o míssil
+        printf("%c", MISSILE_CHAR); 
         pthread_mutex_unlock(&console_mutex);
 
-        Sleep(50); // Pausa para suavizar o movimento
+        Sleep(50); 
 
         pthread_mutex_lock(&console_mutex);
         gotoxy(missil_x, missil_y);
-        printf(" "); // Apaga o míssil da posição anterior
+        printf(" ");
         pthread_mutex_unlock(&console_mutex);
 
-        missil_x++; // Move o míssil para a direita
+        missil_x++;
 
-        // Verifica colisão com dinossauros
+        // colisão com dinossauros
         pthread_mutex_lock(&dinos_mutex);
         for (int i = 0; i < MAX_DINOS; i++) {
-            if (dinos[i].ativo && missil_x == dinos[i].x && missil_y == dinos[i].y - 1) { // Cabeça é "y - 1"
-                dinos[i].vida--; // Reduz a vida do dinossauro
+            if (dinos[i].ativo && missil_x == dinos[i].x && missil_y == dinos[i].y - 1) {
+                dinos[i].vida--; 
                 
-                if (dinos[i].vida <= 0) { // Se a vida chega a 0, destrua o dinossauro
+                if (dinos[i].vida <= 0) {
                     dinos[i].ativo = 0;
 
                     pthread_mutex_unlock(&dinos_mutex);
 
                     pthread_mutex_lock(&console_mutex);
                     gotoxy(dinos[i].x, dinos[i].y);
-                    printf(" "); // Apaga o corpo
+                    printf(" ");
                     gotoxy(dinos[i].x, dinos[i].y - 1);
-                    printf(" "); // Apaga a cabeça
+                    printf(" ");
                     pthread_mutex_unlock(&console_mutex);
 
-                    return NULL; // O míssil desaparece após a colisão
+                    return NULL;
                 }
 
                 pthread_mutex_unlock(&dinos_mutex);
-                return NULL; // O míssil desaparece mesmo sem destruir completamente o dinossauro
+                return NULL;
             }
         }
         pthread_mutex_unlock(&dinos_mutex);
     }
 
-    return NULL; // Finaliza o míssil ao sair do cenário
+    return NULL;
 }
 
 void* abastece_deposito(void* arg) {
     while (jogo_ativo) {
         pthread_mutex_lock(&deposito_mutex);
 
-        // Espera até que haja espaço no depósito
         while (deposito.misseis_disponiveis == n) {
             pthread_cond_wait(&deposito_cond, &deposito_mutex);
         }
 
-        // Abastece slots vazios
         for (int i = 0; i < n; i++) {
             if (deposito.slots[i] == 0) {
-                deposito.slots[i] = 1; // Preenche o slot
+                deposito.slots[i] = 1;
                 deposito.misseis_disponiveis++;
 
-                pthread_cond_signal(&deposito_cond);
                 pthread_mutex_unlock(&deposito_mutex);
                 atualizar_contador_deposito();
                 
-                Sleep(2000); // Simula o tempo para abastecer cada slot
+                Sleep(2000);
                 pthread_mutex_lock(&deposito_mutex);
-                i = -1;
+                i = -1; // preenche os slots do inicio caso algum tenha sido utilizado
             }
         }
 
-        pthread_cond_broadcast(&deposito_cond);
         pthread_mutex_unlock(&deposito_mutex);
 
-        Sleep(5000); // Simula o tempo necessário para o caminhão abastecer
+        Sleep(5000);
     }
     return NULL;
 }
 
-
-
-// Função executada pelas threads de dinossauros
 void* movimenta_dino(void* arg) {
     int dino_id = *(int*)arg; // Recebe o índice do dinossauro ***
     free(arg);
@@ -326,9 +309,9 @@ void* movimenta_dino(void* arg) {
     while (dinos[dino_id].x > 1 && jogo_ativo && dinos[dino_id].ativo) {
         pthread_mutex_lock(&console_mutex);
         gotoxy(dinos[dino_id].x, dinos[dino_id].y);
-        printf("%c", DINO_CHAR); // Corpo
+        printf("%c", DINO_CHAR);
         gotoxy(dinos[dino_id].x, dinos[dino_id].y - 1);
-        printf("O"); // Cabeça
+        printf("O");
         pthread_mutex_unlock(&console_mutex);
 
         Sleep(500);
@@ -342,25 +325,29 @@ void* movimenta_dino(void* arg) {
 
         dinos[dino_id].x--;
 
-        // Verifica colisão com o helicóptero
         if (dinos[dino_id].x == helicoptero_x && dinos[dino_id].y == helicoptero_y) {
-            jogo_ativo = 0; // Finaliza o jogo
-            printf("\nGame Over! O helicoptero foi destruido.\n");
+            jogo_ativo = 0;
+
+            pthread_mutex_lock(&console_mutex);
+            system("cls");
+            gotoxy(10, 10);
+            printf("Game Over! O helicoptero foi destruido.\n");
+            pthread_mutex_unlock(&console_mutex);
+
             break;
         }
     }
 
-    // Marca o dinossauro como inativo e apaga da tela, caso ainda não tenha sido
     pthread_mutex_lock(&console_mutex);
     gotoxy(dinos[dino_id].x, dinos[dino_id].y);
     printf(" ");
     gotoxy(dinos[dino_id].x, dinos[dino_id].y - 1);
-    printf(" "); // Apaga a cabeça também
+    printf(" ");
     pthread_mutex_unlock(&console_mutex);
 
     pthread_mutex_lock(&dinos_mutex);
     dinos[dino_id].ativo = 0;
-    num_dinos--; // Reduz o contador global
+    num_dinos--;
     pthread_mutex_unlock(&dinos_mutex);
 
 
@@ -368,7 +355,7 @@ void* movimenta_dino(void* arg) {
     return NULL;
 }
 
-// Função gerenciadora de dinossauros. Thread separada para ter frequencia (sleep) diferente
+// thread para gerenciar dinos separada do loop do jogo para ter sleep diferente
 void* gerencia_dinos(void* arg) {
     while (jogo_ativo) {
         pthread_mutex_lock(&dinos_mutex);
