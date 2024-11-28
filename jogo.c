@@ -30,8 +30,8 @@ Dinossauro dinos[MAX_DINOS]; // array dos dinos
 Deposito deposito;
 
 // Variaveis de dificuldade
-int t = 5000; // tempo de spawn
-int m = 2; // vida
+int t = 9000; // tempo de spawn
+int m = 1; // vida
 int n = 5; // depósito
 
 
@@ -40,7 +40,8 @@ int helicoptero_x = HELICOPTER_START_X;
 int helicoptero_y = HELICOPTER_START_Y;
 int jogo_ativo = 1; 
 int num_dinos = 0;
-int misseis_hel = 0; 
+int misseis_hel = 3; 
+int caminhao_abastecendo = 0;
 
 // Mutex
 pthread_mutex_t console_mutex;
@@ -64,18 +65,18 @@ void setConsoleSize(int width, int height) {
 void desenha_menu() {
     system("cls");
     printf("=== SELECIONE A DIFICULDADE ===\n");
-    printf("1. Facil: T = 7s, M = 1, N = 5\n");
-    printf("2. Medio: T = 6s, M = 2, N = 4\n");
-    printf("3. Dificil: T = 5s, M = 3, N = 3\n");
+    printf("1. Facil: T = 9s, M = 1, N = 5\n");
+    printf("2. Medio: T = 8s, M = 2, N = 4\n");
+    printf("3. Dificil: T = 7s, M = 3, N = 3\n");
     printf("Escolha uma opcao: ");
 }
 
 void inicializar_dificuldade(int escolha) {
     switch (escolha) {
-        case 1: t = 7000; m = 1; n = 5; break;
-        case 2: t = 6000; m = 2; n = 4; break;
-        case 3: t = 5000; m = 3; n = 3; break;
-        default: t = 7000; m = 1; n = 5; break;
+        case 1: t = 9000; m = 1; n = 5; break;
+        case 2: t = 8000; m = 2; n = 4; break;
+        case 3: t = 7000; m = 3; n = 3; break;
+        default: t = 9000; m = 1; n = 5; break;
     }
 }
 
@@ -140,6 +141,10 @@ void desenha_cenario() {
 
     gotoxy(5, 18);
     printf("[DEP]");
+
+    gotoxy(40, 18);
+    printf("[FAB]");
+
 }
 
 void verificar_game_over() {
@@ -179,6 +184,12 @@ void* movimenta_helicoptero(void* arg) {    // * para referenciar ponteiro na cr
             if (helicoptero_y > 4) { // limite superior
                 apaga_helicoptero(helicoptero_x, helicoptero_y);
                 helicoptero_y--;
+
+                if (helicoptero_y < DEPOSITO_Y) { // para alertar caminhão que saiu do deposito
+                    pthread_mutex_lock(&deposito_mutex);
+                    pthread_cond_broadcast(&deposito_cond);
+                    pthread_mutex_unlock(&deposito_mutex);
+                }
             }
         }
         if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
@@ -194,9 +205,10 @@ void* movimenta_helicoptero(void* arg) {    // * para referenciar ponteiro na cr
 }
 
 void recarregar_helicoptero() {
-    if (helicoptero_y < DEPOSITO_Y) {
+    if (helicoptero_y < DEPOSITO_Y || caminhao_abastecendo) {
         return;
     }
+    
     pthread_mutex_lock(&deposito_mutex);
     
     if (deposito.misseis_disponiveis == 0) {
@@ -273,6 +285,38 @@ void* dispara_missil(void* arg) {
     return NULL;
 }
 
+void desenha_caminhao(int x, int y) {
+    pthread_mutex_lock(&console_mutex);
+    gotoxy(x, y);
+    printf("C"); 
+    pthread_mutex_unlock(&console_mutex);
+}
+
+void apaga_caminhao(int x, int y) {
+    pthread_mutex_lock(&console_mutex);
+    gotoxy(x, y);
+    printf(" "); 
+    pthread_mutex_unlock(&console_mutex);
+}
+
+void mover_caminhao(int start_x, int start_y, int end_x, int end_y) {
+    int x = start_x, y = start_y;
+
+    while (x != end_x || y != end_y) {
+        apaga_caminhao(x, y);
+
+        if (x < end_x) x++; 
+        else if (x > end_x) x--;
+
+        if (y < end_y) y++; 
+        else if (y > end_y) y--;
+
+        desenha_caminhao(x, y);
+        Sleep(100); 
+    }
+}
+
+
 void* abastece_deposito(void* arg) {
     while (jogo_ativo) {
         pthread_mutex_lock(&deposito_mutex);
@@ -280,6 +324,17 @@ void* abastece_deposito(void* arg) {
         while (deposito.misseis_disponiveis == n) {
             pthread_cond_wait(&deposito_cond, &deposito_mutex);
         }
+
+        pthread_mutex_unlock(&deposito_mutex);
+
+        mover_caminhao(40, 19, 11, 19); // De fábrica (40, 18) ao depósito (5, 18)
+
+        pthread_mutex_lock(&deposito_mutex);
+        while (helicoptero_y > DEPOSITO_Y) {
+            pthread_cond_wait(&deposito_cond, &deposito_mutex);
+        }
+
+        caminhao_abastecendo = 1;
 
         for (int i = 0; i < n; i++) {
             if (deposito.slots[i] == 0) {
@@ -291,11 +346,13 @@ void* abastece_deposito(void* arg) {
                 
                 Sleep(2000);
                 pthread_mutex_lock(&deposito_mutex);
-                i = -1; // preenche os slots do inicio caso algum tenha sido utilizado
             }
         }
-
+        
+        caminhao_abastecendo = 0;
         pthread_mutex_unlock(&deposito_mutex);
+
+        mover_caminhao(11, 19, 40, 19);  // Do depósito (5, 18) à fábrica (40, 18)
 
         Sleep(5000);
     }
@@ -357,6 +414,7 @@ void* movimenta_dino(void* arg) {
 
 // thread para gerenciar dinos separada do loop do jogo para ter sleep diferente
 void* gerencia_dinos(void* arg) {
+    Sleep(2000);
     while (jogo_ativo) {
         pthread_mutex_lock(&dinos_mutex);
         if (num_dinos < MAX_DINOS) {
